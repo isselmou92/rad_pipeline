@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rad_pipeline"
+version = "0.1.0"
+description = "Preclinical radiomics & dose-analysis pipeline"
+authors = [{ name="Your Name", email="you@example.com" }]
+readme = "README.md"
+requires-python = "3.9"
+license = {text = "MIT"}
+
+dependencies = [
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "scipy",
+    "matplotlib",
+    "SimpleITK",
+    "pyradiomics",
+    "pydicom",
+    "seaborn",
+    "typer[all]"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+convert-let-to-dose = "rad_pipeline.io.dose_conversion:main"
+slice-volume        = "rad_pipeline.io.dicom_slices:main"
+extract-features    = "rad_pipeline.features.radiomics:main"
+segment-dose        = "rad_pipeline.segmentation.mr_dose:main"
+pca-plot            = "rad_pipeline.analysis.pca:main"

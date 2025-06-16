@@ -1,0 +1,21 @@
+name: preclinical-radiomics
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pip
+  - numpy
+  - pandas
+  - scikit-learn
+  - scipy
+  - matplotlib
+  - simpleitk
+  - pyradiomics
+  - pydicom
+  - seaborn
+  - typer
+  - ruff                   # lint
+  - black                  # code-style
+  - pytest                 # tests
+  - pip:
+      - typer[all]         # richer CLI help

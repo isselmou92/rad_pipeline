@@ -1,0 +1,10 @@
+numpy
+pandas
+scikit-learn
+scipy
+matplotlib
+SimpleITK
+pyradiomics
+pydicom
+seaborn
+typer[all]
