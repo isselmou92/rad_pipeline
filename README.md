@@ -1,31 +1,29 @@
 # Preclinical Radiomics Pipeline
 
-A fully reproducible, open‑source workflow for small‑animal MRI/CT **radiomics**, **dose mapping**, and **statistical analysis**. The code accompanies the manuscript **“Automated pre‑clinical radiomics pipeline for hippocampal dose‑response studies”** and lets anyone clone the repo, install one environment, and reproduce every table/figure in the paper.
+A fully reproducible, open‑source workflow for small‑animal MRI/CT **radiomics**, **dose mapping**, and **statistical analysis**. The code accompanies the manuscript **“An Open-Source Irradiation and Data-Handling Framework for Pre-Clinical Ion-Beam Research”**.
 
 ---
 
-## 📁 Repository Layout
+## Repository Layout
 
 ```
 preclinical-radiomics-pipeline/
-├── src/rad_pipeline/           # importable Python package (pip‑installable)
+├── src/rad_pipeline/           
 │   ├── io/
-│   │   ├── dose_conversion.py  # LET→RT‑Dose DICOM
-│   │   └── dicom_slices.py     # split enhanced CT volume
+│   │   ├── dose_conversion.py  # LET array →RT‑Dose DICOM
+│   │   └── dicom_slices.py     # split CT volume to slices for the TPS
 │   ├── preprocessing/
 │   ├── features/radiomics.py   # feature extraction pipeline
-│   ├── segmentation/mr_dose.py # MRI + dose segmentation & stats
+│   ├── segmentation/mr_dose.py # MRI + dose segmentation & statistics
 │   └── analysis/pca.py         # PCA scatter/loadings figure
-├── scripts/                    # thin CLI wrappers (installed as console‑scripts)
-├── tests/                      # unit + regression tests (pytest)
-├── environment.yml             # mamba/conda lock‑file
-├── Dockerfile                  # one‑command reproducible container
-└── README.md                   # you are here
+├── environment.yml             
+├── Dockerfile                  
+└── README.md                   
 ```
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # 1 — clone & install (Conda)
@@ -66,9 +64,9 @@ pca-plot --csv results/features/combined_features_all_mice.csv \
 
 ---
 
-## 🛠️ Installation Options
+## Installation Options
 
-### 1. Conda/Mamba (recommended)
+### 1.Conda/Mamba (recommended)
 
 ```bash
 mamba env create -f environment.yml
@@ -76,7 +74,7 @@ conda activate preclinical-radiomics
 pip install -e .
 ```
 
-### 2. Docker
+### 2.Docker
 
 ```bash
 docker build -t preclinical-radiomics .
@@ -85,31 +83,24 @@ docker run --rm -it -v $PWD:/workspace preclinical-radiomics
 
 ---
 
-## 📄 License
+## License
 
 Released under the **MIT License**. See `LICENSE` for details.
 
 ---
 
-## ✏️ Citation
+## Citation
 
 If you use this pipeline in academic work, please cite both the paper and the repository:
 
 ```bibtex
 @article{your2025radiomics,
-  title   = {Automated pre‐clinical radiomics pipeline for hippocampal dose‐response studies},
-  author  = {Your Name and Co‑authors},
-  journal = {To be announced},
+  title   = {An Open-Source Irradiation and Data-Handling Framework for Pre-Clinical Ion-Beam Research},
+  author  = {Isselmou Abdarahmane, Lorenz Wolf, Peter Kuess, Gerd Heilemann, Silvia Stocchiero, Barbara Knäusl, Ingo Feinerer, Markus Zeilinger, Dietmar Georg},
+  journal = {***},
   year    = {2025},
-  note    = {Code available at https://github.com/<your_user>/preclinical-radiomics-pipeline}
+  note    = {***}
 }
 ```
 
----
-
-## 📧 Contact
-
-Questions or suggestions? Open an issue or drop us an email at **[your.email@university.edu](mailto:your.email@university.edu)**.
-
----
 
