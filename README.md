@@ -119,7 +119,7 @@ This pipeline supports the following preclinical mouse atlases:
 
 ## Installation Options
 
-### 1.Venv/pip (recommended)
+### 1.Venv/pip
 
 ```bash
 python3 -m venv .venv
