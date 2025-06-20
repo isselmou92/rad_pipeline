@@ -14,6 +14,7 @@ preclinical-radiomics-pipeline/
 │   │   └── dicom_slices.py     # split CT volume to slices for the TPS
 │   ├── features/radiomics.py   # feature extraction pipeline
 │   ├── segmentation/mr_dose.py # MRI + dose segmentation & statistics
+│   ├── segmentation/atlas_segment_export.py # Region export from Digimouse or DSURQE atlases
 │   └── analysis/pca.py         # PCA scatter/loadings figure
 ├── environment.yml             
 ├── Dockerfile                  
@@ -53,15 +54,66 @@ extract-features  \
 segment-dose  \
   --mr Mouse33_MR_BSpline_to_CT.nii                \
   --dose Mouse33_Dose_Mousehead.nii                \
-  --label Mouse33_Atlas_Registered_to_MR.nii        \
+  --label Mouse33_Atlas_Registered_to_MR.nii       \
   --hierarchy-csv DSURQE_mapping.csv               \
   --export-nifti                                   \
   --out results/dose_stats.csv
 
-# 8. recreate PCA figure from manuscript data
+# 8. extract Hippocampus from DSURQE atlas (left+right merged)
+atlas-segment \
+  --atlas dsurqe \
+  --label Mouse33_Atlas_Registered_to_MR.nii \
+  --hierarchy-csv DSURQE_mapping.csv \
+  --region Hippocampus \
+  --merge-sides \
+  --out-dir results/segments
+
+# 9. extract Cerebellum from Digimouse atlas
+atlas-segment \
+  --atlas digimouse \
+  --label atlas_380x992x208.img \
+  --digimouse-map atlas_380x992x208.txt \
+  --region cerebellum \
+  --out-dir results/segments
+
+# 10. recreate PCA figure from manuscript data
 pca-plot --csv results/features/combined_features_all_mice.csv \
          --out results/pca_scatter_and_loadings.png
 ```
+
+---
+
+## Atlas Resources
+
+This pipeline supports the following preclinical mouse atlases:
+
+### DSURQE Mouse Brain Atlas
+
+- **Source**: [Rodare Repository – Record 915](https://rodare.hzdr.de/record/915)
+- **Citation**:  
+  Dorr AE, Lerch JP, Spring S, Kabani N, Henkelman RM.  
+  *High resolution three-dimensional brain atlas using an average magnetic resonance image of 40 adult C57Bl/6J mice.*  
+  **Neuroimage. 2008; 42(1):60–69.**  
+  DOI: [10.1016/j.neuroimage.2008.03.037](https://doi.org/10.1016/j.neuroimage.2008.03.037)
+  
+  Müller, Johannes, Suckert, Theresa, Beyreuther, Elke, Schneider, Moritz, Boucsein, Marc,
+  Bodenstein, Elisabeth, … Dietrich, Antje. (2021). Slice2Volume: Fusion of multimodal medical imaging 
+  and light microscopy data of irradiation-injured brain tissue in 3D. 
+  (Version 0.3.1) [Data set]. Rodare. http://doi.org/10.14278/rodare.915
+  
+
+### Digimouse Whole-Body Atlas
+
+- **Source**: [USC Neuroimage – Digimouse Project](https://neuroimage.usc.edu/neuro/Digimouse)
+- **Citation**:  
+  Dogdas B, Stout D, Chatziioannou A, Leahy RM.  
+  *Digimouse: A 3D Whole Body Mouse Atlas from CT and Cryosection Data.*  
+  **Phys Med Biol. 2007; 52:577–587.**  
+  DOI: [10.1088/0031-9155/52/3/003](http://dx.doi.org/10.1088%2F0031-9155%2F52%2F3%2F003)
+
+  D. Stout, P. Chow, R. Silverman, R. M. Leahy, X. Lewis, S. Gambhir, 
+  A. Chatziioannou, Creating a whole body digital mouse atlas with PET, CT and cryosection images,
+  Molecular Imaging and Biology.2002; 4(4): S27
 
 ---
 
