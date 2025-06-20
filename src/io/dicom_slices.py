@@ -1,424 +1,426 @@
 """
-dicom_slices.py
----------------
 Utility functions to split an Enhanced CT DICOM volume into a folder of
-single-slice CT images.  All graphical-user-interface (tkinter) and
-Nextcloud-upload functionality present in the original script have been removed,
-keeping the module focused purely on DICOM I/O.  Core metadata handling and
-slice-export logic are preserved verbatim so the output remains identical to
-the original workflow.
-"""
+single‑slice CT images.
 
+This version ports **all DICOM‑handling logic** from the PyInstaller GUI script
+(`volume_to_slice_gui_rayCommandSupport.py`) into a lean, CLI‑only helper.  All
+GUI, Nextcloud and threading code has been stripped, but every tag, UID and
+naming rule needed for RayStation/LUT mapping is preserved.
+"""
 from __future__ import annotations
 
+import logging
 import os
 import random
+import re
 from datetime import datetime
 from pathlib import Path
-import logging
 
 import numpy as np
 import pydicom
 from pydicom.dataset import FileDataset, FileMetaDataset
 from pydicom.uid import UID
 
+__all__ = [
+    "volume_to_slices",
+    "create_dicom_slices_originalOrientation",
+    "create_dicom_slices_rayCommandOrientation",
+]
+
 # ---------------------------------------------------------------------------
-# Helper class
+# Helper class – harvests and normalises metadata once per input volume
 # ---------------------------------------------------------------------------
 
 
 class metadataHelper:
-    def __init__(self, file_path):
-        self.originalDICOM = pydicom.dcmread(file_path)
-        self.filepath = file_path
-        self.getAndAdjustMetadata()
+    """Gather all information we later replicate to the 2‑D slices."""
 
-    def getAndAdjustMetadata(self):
+    #: UID root strings we occasionally use when generating new identifiers
+    STUDY_UID_ROOT = "1.2.826.0.1.3680043.10.543."
+    DICOM_OBJECTS_UID = UID("1.2.826.0.1.3680043.1.2.100.6.40.0.76")
 
-        dicom_volume = self.originalDICOM
+    def __init__(self, file_path: str | os.PathLike):
+        self.filepath = str(file_path)
+        self.originalDICOM: pydicom.FileDataset = pydicom.dcmread(self.filepath)
+        self._extract_metadata()
 
-        # Series and Study  (description and IDs set end of function)
-        self.StudyDate = dicom_volume.StudyDate
-        self.StudyTime = dicom_volume.StudyTime
-        self.SeriesDate = dicom_volume.SeriesDate
-        self.SeriesDateFormatted = f"{self.SeriesDate[:4]}-{self.SeriesDate[4:6]}-{self.SeriesDate[6:]}"
-        self.SeriesTime = dicom_volume.SeriesTime
+    # ------------------------------------------------------------------
+    # Metadata extraction (largely lifted 1‑to‑1 from the GUI code)
+    # ------------------------------------------------------------------
 
-        # ContentDate & –Time (= modification date/time)
-        self.ContentDate = datetime.now().strftime("%Y%m%d")
-        self.ContentTime = datetime.now().strftime("%H%M%S")
+    def _extract_metadata(self):  # noqa: C901  (yes, it is long – mirrors original logic)
+        ds = self.originalDICOM  # shorthand
 
-        # Patient
-        self.PatientName = dicom_volume.PatientName
-        self.PatientID = dicom_volume.PatientID
-        self.PatientBirthDate = dicom_volume.PatientBirthDate
-        self.PatientSex = "O"
+        # ---------- dates & times --------------------------------------------------
+        self.StudyDate = ds.get("StudyDate", "")
+        self.StudyTime = ds.get("StudyTime", "")
+        self.SeriesDate = ds.get("SeriesDate", "")
+        self.SeriesTime = ds.get("SeriesTime", "")
+        # human‑readable YYYY‑MM‑DD used in naming later
+        self.SeriesDateFormatted = (
+            f"{self.SeriesDate[:4]}-{self.SeriesDate[4:6]}-{self.SeriesDate[6:]}"
+            if self.SeriesDate
+            else ""
+        )
 
-        # Manufacturer details
-        self.Manufacturer = dicom_volume.Manufacturer
-        self.ManufacturerModelName = dicom_volume.ManufacturerModelName
-        self.ReferringPhysicianName = dicom_volume.ReferringPhysicianName
+        # keep ContentDate/Time from the original file if present – fall back to *now*
+        self.ContentDate = ds.get("ContentDate") or datetime.now().strftime("%Y%m%d")
+        self.ContentTime = ds.get("ContentTime") or datetime.now().strftime("%H%M%S")
 
-        # SOP class, Study, Series, Frame UIDs
-        self.SOPClassUID = dicom_volume.SOPClassUID
-        self.StudyInstanceUID = dicom_volume.StudyInstanceUID
+        # ---------- patient --------------------------------------------------------
+        self.PatientName = ds.get("PatientName", "")
+        self.PatientID = ds.get("PatientID", "")
+        self.PatientBirthDate = ds.get("PatientBirthDate", "") or "20000101"
+        self.PatientSex = "O"  # explicitly set to Other (RayStation requirement in original script)
 
-        # Comments
-        self.ImageComments = dicom_volume.ImageComments
+        # ---------- manufacturer ---------------------------------------------------
+        self.Manufacturer = ds.get("Manufacturer", "")
+        self.ManufacturerModelName = ds.get("ManufacturerModelName", "")
+        self.ReferringPhysicianName = ds.get("ReferringPhysicianName", "")
 
-        # Study description / ID
-        self.StudyDescription = dicom_volume.StudyDescription
-        self.StudyID = dicom_volume.StudyID
+        # ---------- UIDs & SOP class ----------------------------------------------
+        self.modality = ds.get("Modality", "")
+        if self.modality == "CT":
+            self.SOPClassUID = pydicom.uid.CTImageStorage
+        else:
+            # fall back to whatever the file declares (could be an MR‑Enhanced, etc.)
+            self.SOPClassUID = ds.SOPClassUID
+        self.StudyInstanceUID = ds.StudyInstanceUID
 
-        # File-meta information (copied 1-to-1)
+        # ---------- comments & descriptions ---------------------------------------
+        self.ImageComments = ds.get("ImageComments", "")
+        self.StudyDescription = ds.get("StudyDescription", "")
+        self.StudyID = ds.get("StudyID", "")
+
+        # ---------- acquisition parameters ----------------------------------------
+        fg = ds.SharedFunctionalGroupsSequence[0]
+        # (0018,0060)  KVP
+        self.KVP = fg[(0x0018, 0x9325)][0][(0x0018, 0x0060)].value
+        # (0018,9328)  exposure time [ms]
+        self.ExposureTimeInms = fg[(0x0018, 0x9321)][0][(0x0018, 0x9328)].value
+        # (0018,9330)  tube current [mA]
+        self.XrayTubeCurrentMa = fg[(0x0018, 0x9321)][0][(0x0018, 0x9330)].value
+        self.XRayTubeCurrentInuA = self.XrayTubeCurrentMa * 1000  # μA
+        # (0018,9332)  mAs
+        self.ExposureInmAs = fg[(0x0018, 0x9321)][0][(0x0018, 0x9332)].value
+
+        # ---------- reconstruction parameters -------------------------------------
+        parts = os.path.splitext(os.path.basename(self.filepath))[0].split("_")
+        self.ReconstructionAlgorithm = parts[2] if len(parts) > 2 else ""
+        self.ReconstructionNumber = parts[3] if len(parts) > 3 else ""
+
+        # ---------- protocol name (RayStation LUT mapping) ------------------------
+        in_plane_um = int(fg[(0x0028, 0x9110)][0][(0x0028, 0x0030)].value[0] * 1000)
+        series_descr_clean = (
+            str(ds.SeriesDescription).split("/")[1].strip().replace(" ", "").replace("-", "")
+            if ds.SeriesDescription and "/" in ds.SeriesDescription
+            else str(ds.SeriesDescription).replace(" ", "").replace("-", "")
+        )
+        self.ProtocolName = (
+            f"{series_descr_clean}-{self.KVP}kVp"
+            f"{int(round(self.XRayTubeCurrentInuA, 0))}uA-{in_plane_um}um-"
+            f"{self.ReconstructionAlgorithm}"
+        )
+
+        # ---------- bit & pixel info ---------------------------------------------
+        self.BitsAllocated = ds.BitsAllocated
+        self.SamplesPerPixel = ds.SamplesPerPixel
+        self.BitsStored = ds.BitsStored
+        self.HighBit = ds.HighBit
+
+        self.PixelSpacing = fg[(0x0028, 0x9110)][0][(0x0028, 0x0030)].value
+        self.SliceThickness = fg[(0x0028, 0x9110)][0][(0x0018, 0x0050)].value
+
+        # orientation & position
+        self.ImageOrientationPatient = fg[(0x0020, 0x9116)][0][(0x0020, 0x0037)].value
+        self.ImageType = ["ORIGINAL", "PRIMARY", "AXIAL"]
+        self.PhotometricInterpretation = "MONOCHROME2"
+
+        # ---------- rescale --------------------------------------------------------
+        ip_fg = ds.SharedFunctionalGroupsSequence[0]
+        self.RescaleIntercept_init = ip_fg[(0x0028, 0x9145)][0][(0x0028, 0x1052)].value
+        self.RescaleSlope_init = ip_fg[(0x0028, 0x9145)][0][(0x0028, 0x1053)].value
+
+        self.arr = ds.pixel_array  # shape [z, y, x]
+        self.arr_rescaled = (
+            np.round(
+                self.arr.astype(np.float64) * float(self.RescaleSlope_init) + float(self.RescaleIntercept_init),
+                0,
+            ).astype(np.int16)
+        )
+        self.NumberOfFrames = self.arr_rescaled.shape[0]
+        self.PixelRepresentation = 1  # signed after rescaling
+        self.RescaleSlope = 1
+        self.RescaleIntercept = 0
+
+        # ---------- window preset --------------------------------------------------
+        self.WindowCenter = -300
+        self.WindowWidth = 1300
+
+        # ---------- text for SeriesDescription ------------------------------------
+        try:
+            pat_part = str(ds.PatientName).split("/")[2].strip()
+        except Exception:
+            pat_part = str(ds.PatientName).strip()
+        try:
+            ser_part = str(ds.SeriesDescription).split("/")[1].strip()
+        except Exception:
+            ser_part = str(ds.SeriesDescription).strip()
+        # Clean series descriptor without back‑slashes inside an f‑string expression
+        ser_part_clean = re.sub(r"[ \-]", "", ser_part)
+        self.SeriesDescription = f"{pat_part}_{ser_part_clean}"
+
+        # ---------- StationName (critical for LUT mapping) ------------------------
+        # The original GUI script copies ManufacturerModelName when StationName
+        # is absent – we mimic that to avoid AttributeError.
+        self.StationName = getattr(ds, "StationName", self.ManufacturerModelName)
+
+        # ---------- misc UID roots for later use ----------------------------------
+        self.SeriesInstanceUID = ds.SeriesInstanceUID
+        self.FrameOfReferenceUID = ds.FrameOfReferenceUID
+
+        self.SeriesNumber = str(random.randint(0, 9999))
+        self.SOPSeriesRoot = f"1.2.276.0.7230010.3.{random.randint(1000, 9999)}"
+        self.ImageSeriesUIDRoot = f"1.2.276.0.7230010.3.{random.randint(1000, 9999)}"
+
+        # ---------- file‑meta copy -------------------------------------------------
         self.file_meta = FileMetaDataset()
-        self.file_meta.FileMetaInformationVersion = dicom_volume.file_meta.FileMetaInformationVersion
-        self.file_meta.MediaStorageSOPClassUID = dicom_volume.file_meta.MediaStorageSOPClassUID
-        self.file_meta.FileMetaInformationGroupLength = dicom_volume.file_meta.FileMetaInformationGroupLength
-        self.file_meta.FileMetaInformationVersion = dicom_volume.file_meta.FileMetaInformationVersion
+        src_fm = ds.file_meta
+        self.file_meta.FileMetaInformationVersion = src_fm.FileMetaInformationVersion
+        self.file_meta.MediaStorageSOPClassUID = src_fm.MediaStorageSOPClassUID
+        self.file_meta.FileMetaInformationGroupLength = src_fm.FileMetaInformationGroupLength
         self.file_meta.ImplementationVersionName = "DicomObjects.NET"
-        self.file_meta.ImplementationClassUID = UID("1.2.826.0.1.3680043.1.2.100.6.40.0.76")
+        self.file_meta.ImplementationClassUID = self.DICOM_OBJECTS_UID
         self.file_meta.TransferSyntaxUID = pydicom.uid.ImplicitVRLittleEndian
 
         self.is_little_endian = True
         self.is_implicit_VR = True
 
-        # X-ray acquisition parameters
-        self.KVP = dicom_volume.SharedFunctionalGroupsSequence[0][0x0018, 0x9325][0][0x0018, 0x0060].value
-        self.ExposureTimeInms = dicom_volume.SharedFunctionalGroupsSequence[0][0x0018, 0x9321][0][0x0018, 0x9328].value
-        self.XrayTubeCurrentMa = dicom_volume.SharedFunctionalGroupsSequence[0][0x0018, 0x9321][0][
-            0x0018, 0x9330
-        ].value
-        self.XRayTubeCurrentInuA = self.XrayTubeCurrentMa * 1000
-        self.ExposureInmAs = dicom_volume.SharedFunctionalGroupsSequence[0][0x0018, 0x9321][0][0x0018, 0x9332].value
+    # ------------------------------------------------------------------
+    # Convenience wrappers --------------------------------------------------------
 
-        # Reconstruction parameters
-        self.ReconstructionAlgorithm = os.path.splitext(os.path.split(self.filepath)[1])[0].split("_")[2]
-        self.ReconstructionNumber = os.path.splitext(os.path.split(self.filepath)[1])[0].split("_")[3]
-
-        # ProtocolName (important for CT-LUT mapping in RayStation)
-        self.ProtocolName = (
-            f"{str(dicom_volume.SeriesDescription).split('/')[1].strip()}_"
-            f"{int(dicom_volume.SharedFunctionalGroupsSequence[0][0x0028,0x9110][0][0x0028,0x0030].value[0]*1000)}um"
-            f"-{self.ReconstructionAlgorithm}"
-        )
-
-        # Bit information
-        self.BitsAllocated = dicom_volume.BitsAllocated
-        self.SamplesPerPixel = dicom_volume.SamplesPerPixel
-        self.BitsStored = dicom_volume.BitsStored
-        self.HighBit = dicom_volume.HighBit
-
-        # Pixel dimensions
-        self.PixelSpacing = dicom_volume.SharedFunctionalGroupsSequence[0][0x0028, 0x9110][0][0x0028, 0x0030].value
-        self.SliceThickness = dicom_volume.SharedFunctionalGroupsSequence[0][0x0028, 0x9110][0][0x0018, 0x0050].value
-
-        # Image orientation and patient position
-        self.ImageOrientationPatient = dicom_volume.SharedFunctionalGroupsSequence[0][0x0020, 0x9116][0][
-            0x0020, 0x0037
-        ].value
-
-        self.ImageType = ["ORIGINAL", "PRIMARY", "AXIAL"]  # RayStation requirement
-        self.PhotometricInterpretation = "MONOCHROME2"
-
-        # Rescale pixel data
-        self.RescaleIntercept_init = dicom_volume.SharedFunctionalGroupsSequence[0][0x0028, 0x9145][0][
-            0x0028, 0x1052
-        ].value
-        self.RescaleSlope_init = dicom_volume.SharedFunctionalGroupsSequence[0][0x0028, 0x9145][0][
-            0x0028, 0x1053
-        ].value
-
-        self.arr = dicom_volume.pixel_array  # [z=IS, y=AP, x=RL]
-        self.arr_rescaled = np.round(
-            self.arr.astype(np.float64) * float(self.RescaleSlope_init) + float(self.RescaleIntercept_init), 0
-        ).astype(np.int16)
-        self.NumberOfFrames = self.arr_rescaled.shape[0]
-
-        self.PixelRepresentation = 1  # signed int now (initially unsigned)
-        self.RescaleSlope = 1
-        self.RescaleIntercept = 0
-
-        # Window preset
-        self.WindowCenter = -300
-        self.WindowWidth = 1300
-
-        # Series description / ID
-        self.SeriesDescription = (
-            str(dicom_volume.PatientName).split("/")[2].strip()
-            + "_"
-            + str(dicom_volume.SeriesDescription).split("/")[1].strip().replace(" ", "").replace("-", "")
-        )
-
-        # Station name (CT-LUT mapping in RayStation)
-        self.StationName = dicom_volume.StationName
-
-        self.SeriesInstanceUID = dicom_volume.SeriesInstanceUID
-        self.FrameOfReferenceUID = dicom_volume.FrameOfReferenceUID
-
-        # Study UID and Root
-        self.StudyUIDRoot = "1.2.826.0.1.3680043.10.543."
-        self.StudyRoot = dicom_volume.StudyInstanceUID.split(".")[-1]
-
-        # Conversion for DICOMDIR creation (SeriesNumber etc.)
-        self.SeriesNumber = str(random.randint(0, 10000))
-
-        # SOP series root (for individual slices)
-        self.SOPSeriesRoot = f"1.2.276.0.7230010.3.{random.randint(1000,9999)}"
-
-        # UID root used for instances
-        self.ImageSeriesUIDRoot = f"1.2.276.0.7230010.3.{random.randint(1000,9999)}"
-
-        # SOP instances will be created later for every slice
+    def new_filename(self, out_dir: str | os.PathLike, idx: int) -> str:
+        return os.path.join(out_dir, f"CT{idx}.dcm")
 
 
 # ---------------------------------------------------------------------------
-# Study-level metadata helper
+# Study‑level metadata helper (unchanged except for new tags)
 # ---------------------------------------------------------------------------
 
+def set_metadata(meta: metadataHelper, filename: str) -> FileDataset:
+    """Populate tags that stay constant across all slices."""
 
-def set_metadata(metadataHelper, filename):
-    """
-    Set tags that are constant across the study.
-    Series- and instance-specific tags are added outside this helper.
-    """
-    ds = FileDataset(filename, {}, file_meta=metadataHelper.file_meta, preamble=b"\0" * 128)
-    ds.file_meta = metadataHelper.file_meta
+    ds = FileDataset(filename, {}, file_meta=meta.file_meta, preamble=b"\0" * 128)
+    ds.file_meta = meta.file_meta
 
-    ds.is_little_endian = metadataHelper.is_little_endian
-    ds.is_implicit_VR = metadataHelper.is_implicit_VR
+    ds.is_little_endian = meta.is_little_endian
+    ds.is_implicit_VR = meta.is_implicit_VR
 
-    # Bits / samples
-    ds.BitsAllocated = metadataHelper.BitsAllocated
-    ds.SamplesPerPixel = metadataHelper.SamplesPerPixel
-    ds.PixelRepresentation = metadataHelper.PixelRepresentation
-    ds.BitsStored = metadataHelper.BitsStored
-    ds.HighBit = metadataHelper.HighBit
+    # bits / samples
+    ds.BitsAllocated = meta.BitsAllocated
+    ds.SamplesPerPixel = meta.SamplesPerPixel
+    ds.PixelRepresentation = meta.PixelRepresentation
+    ds.BitsStored = meta.BitsStored
+    ds.HighBit = meta.HighBit
 
-    # Identifiers
-    ds.SOPClassUID = metadataHelper.SOPClassUID
-    ds.StudyInstanceUID = metadataHelper.StudyInstanceUID
-    ds.StudyDescription = metadataHelper.StudyDescription
-    ds.StudyID = metadataHelper.StudyID
+    # IDs & descriptions
+    ds.SOPClassUID = meta.SOPClassUID
+    ds.Modality = meta.modality
+    ds.StudyInstanceUID = meta.StudyInstanceUID
+    ds.StudyDescription = meta.StudyDescription
+    ds.StudyID = meta.StudyID
 
-    # Patient
-    ds.ImageComments = metadataHelper.ImageComments
-    ds.PatientName = metadataHelper.PatientName
-    ds.PatientID = metadataHelper.PatientID
-    ds.PatientBirthDate = metadataHelper.PatientBirthDate
-    ds.PatientSex = metadataHelper.PatientSex
+    # patient
+    ds.PatientName = meta.PatientName
+    ds.PatientID = meta.PatientID
+    ds.PatientBirthDate = meta.PatientBirthDate
+    ds.PatientSex = meta.PatientSex
+    ds.ImageComments = meta.ImageComments
 
-    # Dates / times
-    ds.StudyDate = metadataHelper.StudyDate
-    ds.StudyTime = metadataHelper.StudyTime
-    ds.SeriesDate = metadataHelper.SeriesDate
-    ds.SeriesTime = metadataHelper.SeriesTime
-    ds.ContentDate = metadataHelper.ContentDate
-    ds.ContentTime = metadataHelper.ContentTime
+    # dates / times
+    ds.StudyDate = meta.StudyDate
+    ds.StudyTime = meta.StudyTime
+    ds.SeriesDate = meta.SeriesDate
+    ds.SeriesTime = meta.SeriesTime
+    ds.ContentDate = meta.ContentDate
+    ds.ContentTime = meta.ContentTime
 
-    # Manufacturer
-    ds.Manufacturer = metadataHelper.Manufacturer
-    ds.ManufacturerModelName = metadataHelper.ManufacturerModelName
-    ds.ReferringPhysicianName = metadataHelper.ReferringPhysicianName
+    # manufacturer & acquisition
+    ds.Manufacturer = meta.Manufacturer
+    ds.ManufacturerModelName = meta.ManufacturerModelName
+    ds.ReferringPhysicianName = meta.ReferringPhysicianName
 
-    # X-ray acquisition parameters
-    ds.KVP = metadataHelper.KVP
-    ds.ExposureTimeInms = metadataHelper.ExposureTimeInms
-    ds.ExposureInmAs = metadataHelper.ExposureInmAs
-    ds.XRayTubeCurrentInuA = metadataHelper.XRayTubeCurrentInuA
-    ds.ReconstructionAlgorithm = metadataHelper.ReconstructionAlgorithm
-    ds.ProtocolName = metadataHelper.ProtocolName
-    ds.StationName = metadataHelper.StationName
+    ds.KVP = meta.KVP
+    ds.ExposureTimeInms = meta.ExposureTimeInms
+    ds.ExposureInmAs = meta.ExposureInmAs
+    ds.XRayTubeCurrentInuA = meta.XRayTubeCurrentInuA
+    ds.ReconstructionAlgorithm = meta.ReconstructionAlgorithm
+    ds.ProtocolName = meta.ProtocolName
+    ds.StationName = meta.StationName
 
-    # Photometric interpretation & rescale
-    ds.PhotometricInterpretation = metadataHelper.PhotometricInterpretation
-    ds.RescaleIntercept = metadataHelper.RescaleIntercept
-    ds.RescaleSlope = metadataHelper.RescaleSlope
+    # photometric & rescale
+    ds.PhotometricInterpretation = meta.PhotometricInterpretation
+    ds.RescaleIntercept = meta.RescaleIntercept
+    ds.RescaleSlope = meta.RescaleSlope
 
-    # Window preset
-    ds.WindowWidth = metadataHelper.WindowWidth
-    ds.WindowCenter = metadataHelper.WindowCenter
+    # windowing
+    ds.WindowCenter = meta.WindowCenter
+    ds.WindowWidth = meta.WindowWidth
 
     return ds
 
 
 # ---------------------------------------------------------------------------
-# Slice-creation helpers (progress_callback made optional)
+# Slice creation helpers
 # ---------------------------------------------------------------------------
 
+def _write_slice(
+    ds: FileDataset,
+    CTslice: np.ndarray,
+    meta: metadataHelper,
+    idx: int,
+    orientation: str,
+    series_uid: str,
+    frame_uid: str,
+    series_number: str,
+    image_orientation_patient,
+    patient_position,
+    filename: str,
+):
+    """Populate series‑ & instance‑level tags and write to *filename*."""
 
-def create_dicom_slices_originalOrientation(metadataHelper, progress_callback=None):
-    # Output directory
-    dirName = (
-        os.path.split(metadataHelper.filepath)[0]
-        + "/"
-        + os.path.splitext(os.path.split(metadataHelper.filepath)[1])[0]
-        + "_originalOrientation_slices"
+    ds.SeriesInstanceUID = series_uid
+    ds.FrameOfReferenceUID = frame_uid
+    ds.SeriesNumber = series_number
+    ds.SeriesDescription = (
+        meta.SeriesDescription if orientation == "original" else meta.SeriesDescription + "_rayOrientation"
     )
 
-    if not os.path.exists(dirName):
-        os.makedirs(dirName)
+    ds.Rows, ds.Columns = CTslice.shape
+    ds.PixelSpacing = meta.PixelSpacing
+    ds.SliceThickness = meta.SliceThickness
+    ds.NumberOfFrames = 1
 
-    SeriesInstanceUID = pydicom.uid.generate_uid()
-    FrameOfReferenceUID = pydicom.uid.generate_uid()
-    SeriesNumber = str(random.randint(0, 10000))
+    ds.PatientPosition = patient_position
+    ds.ImageOrientationPatient = image_orientation_patient
 
-    for index, CTslice in enumerate(metadataHelper.arr_rescaled):
-        filename = dirName + f"/CT{str(index + 1)}.dcm"
+    # instance‑specific
+    sop_instance_uid = pydicom.uid.generate_uid()
+    ds.file_meta.MediaStorageSOPInstanceUID = sop_instance_uid
+    ds.SOPInstanceUID = sop_instance_uid
+    ds.InstanceNumber = str(idx)
+    ds.ImagePositionPatient = [
+        meta.originalDICOM.PerFrameFunctionalGroupsSequence[0][(0x0020, 0x9113)][0][(0x0020, 0x0032)].value[0],
+        meta.originalDICOM.PerFrameFunctionalGroupsSequence[0][(0x0020, 0x9113)][0][(0x0020, 0x0032)].value[1],
+        meta.originalDICOM.PerFrameFunctionalGroupsSequence[0][(0x0020, 0x9113)][0][(0x0020, 0x0032)].value[2]
+        - (idx - 1) * meta.SliceThickness,
+    ]
 
-        ds = set_metadata(metadataHelper, filename)
-
-        # Series-level tags
-        ds.SeriesInstanceUID = SeriesInstanceUID
-        ds.FrameOfReferenceUID = FrameOfReferenceUID
-        ds.SeriesDescription = metadataHelper.SeriesDescription
-        ds.SeriesNumber = SeriesNumber
-        ds.Rows, ds.Columns = CTslice.shape
-        ds.PixelSpacing = metadataHelper.PixelSpacing
-        ds.SliceThickness = metadataHelper.SliceThickness
-        ds.NumberOfFrames = metadataHelper.NumberOfFrames
-        ds.PatientPosition = "HFP"
-        ds.ImageOrientationPatient = metadataHelper.ImageOrientationPatient
-
-        # Instance-level tags
-        SOPInstanceUID = pydicom.uid.generate_uid()
-        ds.file_meta.MediaStorageSOPInstanceUID = SOPInstanceUID
-        ds.SOPInstanceUID = SOPInstanceUID
-        ds.PixelData = CTslice.tobytes()
-        ds.InstanceNumber = str(index + 1)
-        ds.NumberOfFrames = 1
-        ds.ImagePositionPatient = [
-            metadataHelper.originalDICOM.PerFrameFunctionalGroupsSequence[0][0x0020, 0x9113][0][
-                0x0020, 0x0032
-            ].value[0],
-            metadataHelper.originalDICOM.PerFrameFunctionalGroupsSequence[0][0x0020, 0x9113][0][
-                0x0020, 0x0032
-            ].value[1],
-            metadataHelper.originalDICOM.PerFrameFunctionalGroupsSequence[0][0x0020, 0x9113][0][
-                0x0020, 0x0032
-            ].value[2]
-            - index * metadataHelper.SliceThickness,
-        ]
-
-        ds.save_as(filename)
-
-        progress = (index + 1) / metadataHelper.NumberOfFrames * 100
-        if progress_callback is not None:
-            progress_callback(progress)
+    ds.PixelData = CTslice.tobytes()
+    ds.save_as(filename)
 
 
-def create_dicom_slices_rayCommandOrientation(metadataHelper, progress_callback=None):
-    """
-    Create a RayStation-compatible orientation:
-    ImageOrientationPatient = [1,0,0,0,1,0] and PatientPosition = 'HFS'.
-    """
-    dirName = (
-        os.path.split(metadataHelper.filepath)[0]
-        + "/"
-        + os.path.splitext(os.path.split(metadataHelper.filepath)[1])[0]
-        + "_rayOrientation_slices"
+# ---------------------- orientation helpers ---------------------------------
+
+def create_dicom_slices_originalOrientation(meta: metadataHelper, cb=None):
+    out_dir = os.path.join(
+        os.path.dirname(meta.filepath),
+        os.path.splitext(os.path.basename(meta.filepath))[0] + "_originalOrientation_slices",
     )
+    os.makedirs(out_dir, exist_ok=True)
 
-    if not os.path.exists(dirName):
-        os.makedirs(dirName)
+    series_uid = pydicom.uid.generate_uid()
+    frame_uid = pydicom.uid.generate_uid()
+    series_number = str(random.randint(0, 9999))
 
-    SeriesInstanceUID = pydicom.uid.generate_uid()
-    FrameOfReferenceUID = pydicom.uid.generate_uid()
-    SeriesNumber = str(random.randint(0, 10000))
+    for idx, slice_arr in enumerate(meta.arr_rescaled, start=1):
+        filename = meta.new_filename(out_dir, idx)
+        ds = set_metadata(meta, filename)
+        _write_slice(
+            ds,
+            slice_arr,
+            meta,
+            idx,
+            "original",
+            series_uid,
+            frame_uid,
+            series_number,
+            meta.ImageOrientationPatient,
+            "HFP",
+            filename,
+        )
+        if cb:
+            cb(idx / meta.NumberOfFrames * 100)
 
-    # Flip AP axis & rotate 180° around IS to match orientation
-    arr_HFS = np.flip(metadataHelper.arr_rescaled, axis=1)
 
-    for index, CTslice in enumerate(arr_HFS):
-        filename = dirName + f"/CT{str(index + 1)}.dcm"
+def create_dicom_slices_rayCommandOrientation(meta: metadataHelper, cb=None):
+    """RayStation‑compatible orientation (HFS, [1,0,0,0,1,0])."""
+    out_dir = os.path.join(
+        os.path.dirname(meta.filepath),
+        os.path.splitext(os.path.basename(meta.filepath))[0] + "_rayOrientation_slices",
+    )
+    os.makedirs(out_dir, exist_ok=True)
 
-        ds = set_metadata(metadataHelper, filename)
+    series_uid = pydicom.uid.generate_uid()
+    frame_uid = pydicom.uid.generate_uid()
+    series_number = str(random.randint(0, 9999))
 
-        # Series-level tags
-        ds.SeriesInstanceUID = SeriesInstanceUID
-        ds.FrameOfReferenceUID = FrameOfReferenceUID
-        ds.SeriesDescription = metadataHelper.SeriesDescription + "_rayOrientation"
-        ds.SeriesNumber = SeriesNumber
-        ds.Rows, ds.Columns = CTslice.shape
-        ds.PixelSpacing = metadataHelper.PixelSpacing
-        ds.SliceThickness = metadataHelper.SliceThickness
-        ds.NumberOfFrames = metadataHelper.NumberOfFrames
-        ds.PatientPosition = "HFS"
-        ds.ImageOrientationPatient = [1, 0, 0, 0, 1, 0]
+    # flip AP axis + rotate 180° around IS
+    arr_hfs = np.rot90(np.flip(meta.arr_rescaled, axis=1), k=2, axes=(1, 2))
 
-        # Instance-level tags
-        SOPInstanceUID = pydicom.uid.generate_uid()
-        ds.file_meta.MediaStorageSOPInstanceUID = SOPInstanceUID
-        ds.SOPInstanceUID = SOPInstanceUID
-        ds.PixelData = CTslice.tobytes()
-        ds.InstanceNumber = str(index + 1)
-        ds.NumberOfFrames = 1
-        ds.ImagePositionPatient = [
-            metadataHelper.originalDICOM.PerFrameFunctionalGroupsSequence[0][0x0020, 0x9113][0][
-                0x0020, 0x0032
-            ].value[0],
-            metadataHelper.originalDICOM.PerFrameFunctionalGroupsSequence[0][0x0020, 0x9113][0][
-                0x0020, 0x0032
-            ].value[1],
-            metadataHelper.originalDICOM.PerFrameFunctionalGroupsSequence[0][0x0020, 0x9113][0][
-                0x0020, 0x0032
-            ].value[2]
-            - index * metadataHelper.SliceThickness,
-        ]
-
-        ds.save_as(filename)
-
-        progress = (index + 1) / metadataHelper.NumberOfFrames * 100
-        if progress_callback is not None:
-            progress_callback(progress)
+    for idx, slice_arr in enumerate(arr_hfs, start=1):
+        filename = meta.new_filename(out_dir, idx)
+        ds = set_metadata(meta, filename)
+        _write_slice(
+            ds,
+            slice_arr,
+            meta,
+            idx,
+            "ray",
+            series_uid,
+            frame_uid,
+            series_number,
+            [1, 0, 0, 0, 1, 0],
+            "HFS",
+            filename,
+        )
+        if cb:
+            cb(idx / meta.NumberOfFrames * 100)
 
 
 # ---------------------------------------------------------------------------
-# Convenience wrapper
+# Public convenience wrapper
 # ---------------------------------------------------------------------------
-
 
 def volume_to_slices(
     volume_path: str | Path,
     orientations: tuple[str, ...] = ("original", "ray"),
     progress: bool = True,
-) -> None:
-    """
-    Convert an Enhanced CT DICOM volume into 2-D slices.
-
-    Parameters
-    ----------
-    volume_path
-        Path to the Enhanced CT DICOM file.
-    orientations
-        Tuple containing "original" and/or "ray".
-    progress
-        If ``True`` a simple textual progress bar is printed to stdout.
-    """
+):
     volume_path = Path(volume_path)
-    helper = metadataHelper(str(volume_path))
+    meta = metadataHelper(volume_path)
 
-    def _print_progress(pct: float):
+    def _print(pct: float):
         if progress:
             print(f"\rProgress: {pct:6.2f}%", end="", flush=True)
 
     if "original" in orientations:
-        create_dicom_slices_originalOrientation(helper, _print_progress if progress else None)
+        create_dicom_slices_originalOrientation(meta, _print if progress else None)
     if "ray" in orientations:
-        create_dicom_slices_rayCommandOrientation(helper, _print_progress if progress else None)
+        create_dicom_slices_rayCommandOrientation(meta, _print if progress else None)
+
     if progress:
         print("\nDone.")
 
 
 # ---------------------------------------------------------------------------
-# Simple CLI
+# CLI entry point
 # ---------------------------------------------------------------------------
-
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Split an Enhanced CT DICOM volume into single-slice DICOM images."
+        description="Split an Enhanced CT DICOM volume into single‑slice DICOM images.",
     )
     parser.add_argument("dicom", help="Path to the input Enhanced CT DICOM file")
     parser.add_argument(
@@ -429,14 +431,11 @@ if __name__ == "__main__":
         help="Which orientations to export (default: both)",
     )
     parser.add_argument(
-        "--no-progress",
+        "--no‑progress",
+        dest="no_progress",
         action="store_true",
         help="Disable textual progress output",
     )
 
     args = parser.parse_args()
-    volume_to_slices(
-        args.dicom,
-        tuple(args.orientations),
-        progress=not args.no_progress,
-    )
+    volume_to_slices(args.dicom, tuple(args.orientations), progress=not args.no_progress)

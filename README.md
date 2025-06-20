@@ -12,7 +12,6 @@ preclinical-radiomics-pipeline/
 │   ├── io/
 │   │   ├── dose_conversion.py  # LET array →RT‑Dose DICOM
 │   │   └── dicom_slices.py     # split CT volume to slices for the TPS
-│   ├── preprocessing/
 │   ├── features/radiomics.py   # feature extraction pipeline
 │   ├── segmentation/mr_dose.py # MRI + dose segmentation & statistics
 │   └── analysis/pca.py         # PCA scatter/loadings figure
@@ -26,29 +25,31 @@ preclinical-radiomics-pipeline/
 ## Quick Start
 
 ```bash
-# 1 — clone & install (Conda)
+# 1. clone & install
 git clone https://github.com/<your_user>/preclinical-radiomics-pipeline.git
 cd preclinical-radiomics-pipeline
-mamba env create -f environment.yml
-conda activate preclinical-radiomics
-pip install -e .   # editable install for scripts/rad_pipeline
 
-# 2 — run unit tests (optional)
-pytest -q
+# 2. create & activate a clean virtual environment
+python3 -m venv .venv
+source .venv/bin/activate          # Windows PowerShell:  .venv\Scripts\Activate
 
-# 3 — slice an enhanced CT DICOM volume
+# 3. upgrade pip & install the package (editable mode recommended)
+python -m pip install --upgrade pip
+pip install -e . 
+
+# 4. slice an enhanced CT DICOM volume
 slice-volume  input_CT_enhanced.dcm  --orientations original ray
 
-# 4 — convert LET map to RT‑Dose DICOM
+# 5. convert LET map to RT‑Dose DICOM
 dose-convert   template_RD.dcm dose.npy let.npy  out_let_map.dcm
 
-# 5 — extract radiomic features from two mice
+# 6. extract radiomic features from two mice
 extract-features  \
   --mice-dir data/Manually_preprocessed_and_verified \
   --mice Mouse27_Verified Mouse30_Verified           \
   --out-dir results/features
 
-# 6 — segment dose and compute DVH stats
+# 7. segment dose and compute DVH stats
 segment-dose  \
   --mr Mouse33_MR_BSpline_to_CT.nii                \
   --dose Mouse33_Dose_Mousehead.nii                \
@@ -57,7 +58,7 @@ segment-dose  \
   --export-nifti                                   \
   --out results/dose_stats.csv
 
-# 7 — recreate PCA figure from manuscript data
+# 8. recreate PCA figure from manuscript data
 pca-plot --csv results/features/combined_features_all_mice.csv \
          --out results/pca_scatter_and_loadings.png
 ```
@@ -66,19 +67,20 @@ pca-plot --csv results/features/combined_features_all_mice.csv \
 
 ## Installation Options
 
-### 1.Conda/Mamba (recommended)
+### 1.Venv/pip (recommended)
 
 ```bash
-mamba env create -f environment.yml
-conda activate preclinical-radiomics
-pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate          # Windows PowerShell:  .venv\Scripts\Activate
+python -m pip install --upgrade pip
+pip install -e . 
 ```
 
 ### 2.Docker
 
 ```bash
-docker build -t preclinical-radiomics .
-docker run --rm -it -v $PWD:/workspace preclinical-radiomics
+docker build -t preclinical-radiomics:latest .
+docker run --rm -it -v %cd%:/workspace preclinical-radiomics:latest
 ```
 
 ---
