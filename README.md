@@ -40,6 +40,8 @@ pip install -e .
 
 # 4. slice an enhanced CT DICOM volume
 slice-volume  input_CT_enhanced.dcm  --orientations original ray
+```python .\src\io\dicom_slices.py .\data\slice-volume\20241031094809_CT_ISRATV_0.dcm```
+
 
 # 5. convert LET map to RT‑Dose DICOM
 dose-convert   template_RD.dcm dose.npy let.npy  out_let_map.dcm
