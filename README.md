@@ -45,6 +45,7 @@ slice-volume  input_CT_enhanced.dcm  --orientations original ray
 
 # 5. convert LET map to RT‑Dose DICOM
 dose-convert   template_RD.dcm dose.npy let.npy  out_let_map.dcm
+```python .\src\io\dose_conversion.py .\data\dose-convert\template_dose.dcm  .\data\dose-convert\dose_npy.npy  .\data\dose-convert\let_npy.npy  .\data\dose-convert\out_let_map.dcm```
 
 # 6. extract radiomic features from two mice
 extract-features  \
