@@ -62,6 +62,9 @@ segment-dose  \
   --export-nifti                                   \
   --out results/dose_stats.csv
 
+'''  python .\src\segmentation\mr_dose.py --mr .\data\segment-dose\mr\mr_volume.nii --dose .\data\segment-dose\dose\dose_volume.nii --atlas .\data\segment-dose\atlas\registered_atlas.nii --hierarchy-csv .\data\segment-dose\atlas\registered_atlas_labels.csv '''
+
+
 # 8. extract Hippocampus from DSURQE atlas (left+right merged)
 atlas-segment \
   --atlas dsurqe \
