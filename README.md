@@ -140,12 +140,6 @@ python -m pip install --upgrade pip
 pip install -e . 
 ```
 
-### 2.Docker
-
-```bash
-docker build -t preclinical-radiomics:latest .
-docker run --rm -it -v %cd%:/workspace preclinical-radiomics:latest
-```
 
 ---
 
