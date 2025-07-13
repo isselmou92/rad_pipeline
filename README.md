@@ -82,6 +82,8 @@ atlas-segment \
   --region cerebellum \
   --out-dir results/segments
 
+''' python .\src\segmentation\atlas_regions_nifti.py --atlas dsurqe --label .\data\segment-dose\atlas\registered_atlas.nii --hierarchy-csv .\data\segment-dose\atlas\registered_atlas_labels.csv --region "Hippocampal region" --side both --merge-sides --smooth-radius 0 --out-dir .\data\segment-atlas '''
+
 # 10. recreate PCA figure from manuscript data
 pca-plot --csv results/features/combined_features_all_mice.csv \
          --out results/pca_scatter_and_loadings.png
