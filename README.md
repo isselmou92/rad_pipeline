@@ -31,33 +31,42 @@ preclinical-radiomics-pipeline/
 git clone https://github.com/<your_user>/preclinical-radiomics-pipeline.git
 cd preclinical-radiomics-pipeline
 ```
-# 2. create & activate a clean virtual environment
+### 2. create & activate a clean virtual environment
+```bash
 python3 -m venv .venv
 source .venv/bin/activate          # Windows PowerShell:  .venv\Scripts\Activate
-
-# 3. upgrade pip & install the package (editable mode recommended)
+```
+### 3. upgrade pip & install the package
+```bash
 python -m pip install --upgrade pip
 pip install -e . 
-
-# 4. slice an enhanced CT DICOM volume
+```
+### 4. slice an enhanced CT DICOM volume
+```bash
 python .\src\io\dicom_slices.py .\data\slice-volume\20241031094809_CT_ISRATV_0.dcm  CT_Volume.dcm  --orientations original ray
-
-# 5. convert LET map to RT‑Dose DICOM
+```
+### 5. convert LET map to RT‑Dose DICOM
+```bash
 python .\src\io\dose_conversion.py .\data\dose-convert\template_dose.dcm  .\data\dose-convert\dose_npy.npy  .\data\dose-convert\let_npy.npy  .\data\dose-convert\out_let_map.dcm
-
-# 6. extract radiomic features from two mice
+```
+### 6. extract radiomic features from two mice
+```bash
 python .\src\features\radiomics_pipeline.py --mice-dir data/MR --mice Mouse_01 --out-dir data/Radiomics_Features
-
-# 7. segment dose and compute DVH stats
+```
+### 7. segment dose and compute DVH stats
+```bash
 python .\src\segmentation\mr_dose.py --mr .\data\segment-dose\mr\mr_volume.nii --dose .\data\segment-dose\dose\dose_volume.nii --atlas .\data\segment-dose\atlas\registered_atlas.nii --hierarchy-csv .\data\segment-dose\atlas\registered_atlas_labels.csv
-
-# 8. extract Hippocampus from DSURQE atlas (left+right merged)
+```
+### 8. extract Hippocampus from DSURQE atlas (left+right merged)
+```bash
 python .\src\segmentation\atlas_regions_nifti.py --atlas dsurqe --label .\data\segment-dose\atlas\registered_atlas.nii --hierarchy-csv .\data\segment-dose\atlas\registered_atlas_labels.csv --region "Hippocampal region" --side both --merge-sides --smooth-radius 0 --out-dir .\data\segment-atlas
-
-# 9. extract Cerebellum from Digimouse atlas
+```
+### 9. extract Cerebellum from Digimouse atlas
+```bash
 python .\src\segmentation\atlas_regions_nifti.py --atlas digimouse --label .\data\segment-dose\atlas\atlas_380x992x208.img --hierarchy-csv .\data\segment-dose\atlas\atlas_380x992x208.txt --region "cerebellum" -- --smooth-radius 0 --out-dir .\data\segment-atlas
-
-# 10. Create PCA Analysis
+```
+### 10. Create PCA Analysis
+```bash
 python .\src\analysis\pca.py --csv data/Radiomics_Features/combined_features_all_mice.csv
 ```
 
