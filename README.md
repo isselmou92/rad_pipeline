@@ -25,8 +25,9 @@ preclinical-radiomics-pipeline/
 
 ## Quick Start
 
-```bash
+
 # 1. clone & install
+```bash
 git clone https://github.com/<your_user>/preclinical-radiomics-pipeline.git
 cd preclinical-radiomics-pipeline
 
