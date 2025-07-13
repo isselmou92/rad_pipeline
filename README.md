@@ -59,9 +59,8 @@ python .\src\segmentation\atlas_regions_nifti.py --atlas dsurqe --label .\data\s
 # 9. extract Cerebellum from Digimouse atlas
 python .\src\segmentation\atlas_regions_nifti.py --atlas digimouse --label .\data\segment-dose\atlas\atlas_380x992x208.img --hierarchy-csv .\data\segment-dose\atlas\atlas_380x992x208.txt --region "cerebellum" -- --smooth-radius 0 --out-dir .\data\segment-atlas
 
-# 10. recreate PCA figure from manuscript data
-pca-plot --csv results/features/combined_features_all_mice.csv \
-         --out results/pca_scatter_and_loadings.png
+# 10. Create PCA Analysis
+python .\src\analysis\pca.py --csv data/Radiomics_Features/combined_features_all_mice.csv
 ```
 
 ---
