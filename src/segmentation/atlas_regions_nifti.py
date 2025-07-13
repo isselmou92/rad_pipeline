@@ -9,7 +9,7 @@ Features
 ~~~~~~~~
 * Choose atlas type with `--atlas {dsurqe|digimouse}`
 * For **DSURQE**
-  • needs a CSV that lists *Structure / hierarchy / left label / right label*
+  • needs a CSV that lists *Structure / hierarchy / left atlas / right atlas*
   • supports left / right export or merged sides
 * For **Digimouse**
   • needs a plain-text table (`label_id[+label_id…] --> region_name`)
@@ -23,7 +23,7 @@ Quick examples
 # DSURQE Hippocampus, merged sides
 python -m atlas_segment_export \
   --atlas dsurqe \
-  --label Atlas_DSURQE.nii \
+  --atlas Atlas_DSURQE.nii \
   --hierarchy-csv DSURQE_mapping.csv \
   --region Hippocampus \
   --merge-sides
@@ -31,7 +31,7 @@ python -m atlas_segment_export \
 # Digimouse Cerebellum (from supplied txt table)
 python -m atlas_segment_export \
   --atlas digimouse \
-  --label digimouse_atlas.nii \
+  --atlas digimouse_atlas.nii \
   --digimouse-map atlas_380x992x208.txt \
   --region cerebellum
 
@@ -52,7 +52,7 @@ import SimpleITK as sitk
 # I/O helpers
 # ─────────────────────────────────────────────────────────────────────────────
 def load_labelmap(path: str | Path) -> sitk.Image:
-    """Read a label map as UInt16 NIfTI/Analyze image."""
+    """Read a atlas map as UInt16 NIfTI/Analyze image."""
     return sitk.ReadImage(str(path), sitk.sitkUInt16)
 
 
@@ -65,7 +65,7 @@ def extract_bilateral_rois(
     rois: Dict[str, sitk.Image] = {}
     for _, row in csv_df.iterrows():
         for side in ("left", "right"):
-            lbl = row.get(f"{side} label")
+            lbl = row.get(f"{side} atlas")
             if pd.notna(lbl):
                 mask = sitk.BinaryThreshold(
                     labelmap,
@@ -156,6 +156,11 @@ def export_dsurqe(
     out_dir: Path,
 ) -> None:
     mapping_df = pd.read_csv(mapping_csv)
+    mapping_df = mapping_df.rename(columns={
+        'left label': 'left atlas',
+        'right label': 'right atlas',
+    })
+    mapping_df['hierarchy'] = mapping_df['hierarchy'].str.strip()
     bilateral_rois = extract_bilateral_rois(labelmap, mapping_df)
     grouped = group_rois_by_hierarchy(mapping_df, bilateral_rois)
 
@@ -171,7 +176,7 @@ def export_dsurqe(
         if mask is None:
             print(f"Warning: no voxels for '{name}' – skipping.")
             return
-        sitk.WriteImage(mask, out_dir / name)
+        sitk.WriteImage(mask, str(out_dir / name))
         print("✓ written", out_dir / name)
 
     if side in ("left", "right"):
@@ -203,7 +208,7 @@ def export_digimouse(
     mask = smooth_mask(mask_from_label_ids(labelmap, mapping[region_key]), smooth_radius)
     out_dir.mkdir(parents=True, exist_ok=True)
     fname = f"{region.replace(' ', '_')}.nii"
-    sitk.WriteImage(mask, out_dir / fname)
+    sitk.WriteImage(mask, str(out_dir / fname))
     print("✓ written", out_dir / fname)
 
 
@@ -226,7 +231,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--hierarchy-csv", help="DSURQE mapping CSV (required if --atlas=dsurqe)")
 
     # Digimouse-specific
-    p.add_argument("--digimouse-map", help="Digimouse label table TXT (required if --atlas=digimouse)")
+    p.add_argument("--digimouse-map", help="Digimouse atlas table TXT (required if --atlas=digimouse)")
 
     # Region selection / listing
     p.add_argument("--region", help="Region name / hierarchy to extract")

@@ -7,7 +7,7 @@ Create a side-by-side figure with:
 A.  2-D PCA scatter of radiomic features, coloured by hippocampal side
 B.  Bar-plot of the top PC1/PC2 loadings (|loading| ≥ 0.1)
 
-The plotting code (Seaborn + Matplotlib) and all label/legend tweaks are
+The plotting code (Seaborn + Matplotlib) and all atlas/legend tweaks are
 _verbatim_ from the original 2D PCA Loadings script so the figure will look
 identical.  Default CLI arguments reproduce the manuscript figure out-of-the-box.
 

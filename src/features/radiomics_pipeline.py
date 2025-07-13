@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-radiomics.py
+radiomics_pipeline.py
 ────────────
 End-to-end feature-extraction pipeline:
 
@@ -32,14 +32,13 @@ from typing import List
 import numpy as np
 import pandas as pd
 import SimpleITK as sitk
+import radiomics
 from radiomics import featureextractor
-
-
 # -------------------------------------------------------------------------
 # Augmentation helpers
 # -------------------------------------------------------------------------
 
-# def elastic_deformation(volume, alpha, sigma, random_seed=42):
+# def elastic_deformation(volume, alpha,igma, random_seed=42):
 #     np.random.seed(random_seed)  # Set seed for reproducibility
 #     shape = volume.shape
 #     dx = ndi.gaussian_filter((np.random.rand(*shape) * 2 - 1), sigma, mode="constant", cval=0) * alpha
@@ -210,7 +209,7 @@ def process_mouse(
     out_dir: Path,
     extractor: featureextractor.RadiomicsFeatureExtractor,
 ) -> pd.DataFrame:
-    data_file = mouse_dir / "MR_BSpline_Registered_to_CT.nii"
+    data_file = mouse_dir / "MR_Volume.nii"
     rois_dir = mouse_dir / "rois"
 
     regions = {

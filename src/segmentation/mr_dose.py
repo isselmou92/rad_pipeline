@@ -2,8 +2,8 @@
 """
 mr_dose.py
 ──────────
-• Loads MRI, dose, and atlas‐label NIfTI volumes
-• Builds left / right ROIs from a CSV mapping (label numbers ↔ structures)
+• Loads MRI, dose, and atlas‐atlas NIfTI volumes
+• Builds left / right ROIs from a CSV mapping (atlas numbers ↔ structures)
 • Combines ROIs into hierarchy-level masks, smooths them, and aligns them to
   the MRI or dose grid on demand
 • Segments both MR and dose volumes, then computes dose statistics
@@ -17,8 +17,8 @@ Identical maths, identical statistics — just parameterised paths and a small
 Example
 -------
 python -m rad_pipeline.segmentation.mr_dose \
-    --mr Mouse33_MR_BSpline_to_CT.nii \
-    --label Mouse33_Atlas_Registered_to_MR.nii \
+    --mr mr_volume.nii \
+    --atlas Mouse33_Atlas_Registered_to_MR.nii \
     --dose Mouse33_Dose_Mousehead.nii \
     --hierarchy-csv DSURQE_mapping.csv \
     --out dose_stats.csv \
@@ -119,12 +119,12 @@ def extract_bilateral_rois(
 ) -> Dict[str, sitk.Image]:
     """
     Build one binary mask per {Structure}-(left/right) using the CSV that
-    contains columns:  Structure | hierarchy | left label | right label
+    contains columns:  Structure | hierarchy | left atlas | right atlas
     """
     rois: Dict[str, sitk.Image] = {}
     for _, row in csv_df.iterrows():
         for side in ("left", "right"):
-            lbl = row[f"{side} label"]
+            lbl = row[f"{side} atlas"]
             if pd.notna(lbl):
                 mask = sitk.BinaryThreshold(
                     labelmap,
@@ -174,6 +174,12 @@ def process(
     atlas = load_labelmap(label_path)
     mapping = pd.read_csv(csv_path)
 
+    mapping = mapping.rename(columns={
+        'left label': 'left atlas',
+        'right label': 'right atlas',
+    })
+    mapping['hierarchy'] = mapping['hierarchy'].fillna('uncategorised')
+
     print("• building ROIs …")
     bilateral_rois = extract_bilateral_rois(atlas, mapping)
     grouped = group_rois_by_hierarchy(mapping, bilateral_rois)
@@ -209,10 +215,11 @@ def process(
                 sitk.WriteImage(mr_seg, seg_dir / f"mr_{hierarchy}_{side}.nii")
 
     # flatten into DataFrame
-    df = (
-        pd.DataFrame(rows, columns=["hierarchy", "side", "stats"])
-        .join(pd.json_normalize(rows, record_path="stats", errors="ignore"))
-        .drop(columns="stats")
+    df = pd.DataFrame(
+        [
+            {"hierarchy": h, "side": s, **st}
+            for h, s, st in rows
+        ]
     )
     df.to_csv(out_dir / "dose_stats.csv", index=False)
     print("✓ written", out_dir / "dose_stats.csv")
@@ -228,11 +235,11 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument("--mr", required=True, help="MRI NIfTI volume")
     p.add_argument("--dose", required=True, help="Dose NIfTI volume")
-    p.add_argument("--label", required=True, help="Atlas labelmap NIfTI")
+    p.add_argument("--atlas", required=True, help="Atlas labelmap NIfTI")
     p.add_argument(
         "--hierarchy-csv",
         required=True,
-        help="CSV with columns Structure / hierarchy / left label / right label",
+        help="CSV with columns Structure / hierarchy / left atlas / right atlas",
     )
     p.add_argument(
         "--out",
@@ -253,7 +260,7 @@ def main() -> None:
     process(
         mr_path=Path(args.mr),
         dose_path=Path(args.dose),
-        label_path=Path(args.label),
+        label_path=Path(args.atlas),
         csv_path=Path(args.hierarchy_csv),
         export_nifti=args.export_nifti,
         out_dir=out_path.parent,
