@@ -41,7 +41,6 @@ pip install -e .
 # 4. slice an enhanced CT DICOM volume
 python .\src\io\dicom_slices.py .\data\slice-volume\20241031094809_CT_ISRATV_0.dcm  CT_Volume.dcm  --orientations original ray
 
-
 # 5. convert LET map to RT‑Dose DICOM
 python .\src\io\dose_conversion.py .\data\dose-convert\template_dose.dcm  .\data\dose-convert\dose_npy.npy  .\data\dose-convert\let_npy.npy  .\data\dose-convert\out_let_map.dcm
 
@@ -50,8 +49,6 @@ python .\src\features\radiomics_pipeline.py --mice-dir data/MR --mice Mouse_01 -
 
 # 7. segment dose and compute DVH stats
 python .\src\segmentation\mr_dose.py --mr .\data\segment-dose\mr\mr_volume.nii --dose .\data\segment-dose\dose\dose_volume.nii --atlas .\data\segment-dose\atlas\registered_atlas.nii --hierarchy-csv .\data\segment-dose\atlas\registered_atlas_labels.csv
-
-
 
 # 8. extract Hippocampus from DSURQE atlas (left+right merged)
 python .\src\segmentation\atlas_regions_nifti.py --atlas dsurqe --label .\data\segment-dose\atlas\registered_atlas.nii --hierarchy-csv .\data\segment-dose\atlas\registered_atlas_labels.csv --region "Hippocampal region" --side both --merge-sides --smooth-radius 0 --out-dir .\data\segment-atlas
@@ -96,20 +93,6 @@ This pipeline supports the following preclinical mouse atlases:
   D. Stout, P. Chow, R. Silverman, R. M. Leahy, X. Lewis, S. Gambhir, 
   A. Chatziioannou, Creating a whole body digital mouse atlas with PET, CT and cryosection images,
   Molecular Imaging and Biology.2002; 4(4): S27
-
----
-
-## Installation Options
-
-### 1.Venv/pip
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate          # Windows PowerShell:  .venv\Scripts\Activate
-python -m pip install --upgrade pip
-pip install -e . 
-```
-
 
 ---
 
