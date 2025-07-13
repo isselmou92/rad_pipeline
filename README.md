@@ -53,6 +53,10 @@ extract-features  \
   --mice Mouse27_Verified Mouse30_Verified           \
   --out-dir results/features
 
+python .\src\features\radiomics_pipeline.py --mice-dir data/MR --mice Mouse_01 --out-dir data/Radiomics_Features
+
+
+
 # 7. segment dose and compute DVH stats
 segment-dose  \
   --mr Mouse33_MR_BSpline_to_CT.nii                \
