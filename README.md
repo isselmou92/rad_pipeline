@@ -12,7 +12,7 @@ preclinical-radiomics-pipeline/
 │   ├── io/
 │   │   ├── dose_conversion.py  # LET array →RT‑Dose DICOM
 │   │   └── dicom_slices.py     # split CT volume to slices for the TPS
-│   ├── features/radiomics.py   # feature extraction pipeline
+│   ├── features/radiomics_pipeline.py   # feature extraction pipeline
 │   ├── segmentation/mr_dose.py # MRI + dose segmentation & statistics
 │   ├── segmentation/atlas_segment_export.py # Region export from Digimouse or DSURQE atlases
 │   └── analysis/pca.py         # PCA scatter/loadings figure
@@ -39,54 +39,25 @@ python -m pip install --upgrade pip
 pip install -e . 
 
 # 4. slice an enhanced CT DICOM volume
-slice-volume  input_CT_enhanced.dcm  --orientations original ray
-```python .\src\io\dicom_slices.py .\data\slice-volume\20241031094809_CT_ISRATV_0.dcm```
+python .\src\io\dicom_slices.py .\data\slice-volume\20241031094809_CT_ISRATV_0.dcm  CT_Volume.dcm  --orientations original ray
 
 
 # 5. convert LET map to RT‑Dose DICOM
-dose-convert   template_RD.dcm dose.npy let.npy  out_let_map.dcm
-```python .\src\io\dose_conversion.py .\data\dose-convert\template_dose.dcm  .\data\dose-convert\dose_npy.npy  .\data\dose-convert\let_npy.npy  .\data\dose-convert\out_let_map.dcm```
+python .\src\io\dose_conversion.py .\data\dose-convert\template_dose.dcm  .\data\dose-convert\dose_npy.npy  .\data\dose-convert\let_npy.npy  .\data\dose-convert\out_let_map.dcm
 
 # 6. extract radiomic features from two mice
-extract-features  \
-  --mice-dir data/Manually_preprocessed_and_verified \
-  --mice Mouse27_Verified Mouse30_Verified           \
-  --out-dir results/features
-
 python .\src\features\radiomics_pipeline.py --mice-dir data/MR --mice Mouse_01 --out-dir data/Radiomics_Features
 
-
-
 # 7. segment dose and compute DVH stats
-segment-dose  \
-  --mr Mouse33_MR_BSpline_to_CT.nii                \
-  --dose Mouse33_Dose_Mousehead.nii                \
-  --label Mouse33_Atlas_Registered_to_MR.nii       \
-  --hierarchy-csv DSURQE_mapping.csv               \
-  --export-nifti                                   \
-  --out results/dose_stats.csv
+python .\src\segmentation\mr_dose.py --mr .\data\segment-dose\mr\mr_volume.nii --dose .\data\segment-dose\dose\dose_volume.nii --atlas .\data\segment-dose\atlas\registered_atlas.nii --hierarchy-csv .\data\segment-dose\atlas\registered_atlas_labels.csv
 
-'''  python .\src\segmentation\mr_dose.py --mr .\data\segment-dose\mr\mr_volume.nii --dose .\data\segment-dose\dose\dose_volume.nii --atlas .\data\segment-dose\atlas\registered_atlas.nii --hierarchy-csv .\data\segment-dose\atlas\registered_atlas_labels.csv '''
 
 
 # 8. extract Hippocampus from DSURQE atlas (left+right merged)
-atlas-segment \
-  --atlas dsurqe \
-  --label Mouse33_Atlas_Registered_to_MR.nii \
-  --hierarchy-csv DSURQE_mapping.csv \
-  --region Hippocampus \
-  --merge-sides \
-  --out-dir results/segments
+python .\src\segmentation\atlas_regions_nifti.py --atlas dsurqe --label .\data\segment-dose\atlas\registered_atlas.nii --hierarchy-csv .\data\segment-dose\atlas\registered_atlas_labels.csv --region "Hippocampal region" --side both --merge-sides --smooth-radius 0 --out-dir .\data\segment-atlas
 
 # 9. extract Cerebellum from Digimouse atlas
-atlas-segment \
-  --atlas digimouse \
-  --label atlas_380x992x208.img \
-  --digimouse-map atlas_380x992x208.txt \
-  --region cerebellum \
-  --out-dir results/segments
-
-''' python .\src\segmentation\atlas_regions_nifti.py --atlas dsurqe --label .\data\segment-dose\atlas\registered_atlas.nii --hierarchy-csv .\data\segment-dose\atlas\registered_atlas_labels.csv --region "Hippocampal region" --side both --merge-sides --smooth-radius 0 --out-dir .\data\segment-atlas '''
+python .\src\segmentation\atlas_regions_nifti.py --atlas digimouse --label .\data\segment-dose\atlas\atlas_380x992x208.img --hierarchy-csv .\data\segment-dose\atlas\atlas_380x992x208.txt --region "cerebellum" -- --smooth-radius 0 --out-dir .\data\segment-atlas
 
 # 10. recreate PCA figure from manuscript data
 pca-plot --csv results/features/combined_features_all_mice.csv \
