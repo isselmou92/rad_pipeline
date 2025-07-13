@@ -26,18 +26,14 @@ preclinical-radiomics-pipeline/
 ## Quick Start
 
 
-# 1. clone & install
+### 1. clone & install
 ```bash
 git clone https://github.com/<your_user>/preclinical-radiomics-pipeline.git
 cd preclinical-radiomics-pipeline
-
----
-
+```
 # 2. create & activate a clean virtual environment
 python3 -m venv .venv
 source .venv/bin/activate          # Windows PowerShell:  .venv\Scripts\Activate
-
----
 
 # 3. upgrade pip & install the package (editable mode recommended)
 python -m pip install --upgrade pip
