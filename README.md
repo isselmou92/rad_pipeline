@@ -117,12 +117,11 @@ Released under the **MIT License**. See `LICENSE` for details.
 If you use this pipeline in academic work, please cite both the paper and the repository:
 
 ```bibtex
-@article{your2025radiomics,
+@article{2025radpipline,
   title   = {An Open-Source Irradiation and Data-Handling Framework for Pre-Clinical Ion-Beam Research},
   author  = {Isselmou Abdarahmane, Lorenz Wolf, Peter Kuess, Gerd Heilemann, Silvia Stocchiero, Barbara Knäusl, Ingo Feinerer, Markus Zeilinger, Dietmar Georg},
-  journal = {***},
-  year    = {2025},
-  note    = {***}
+  journal = {Zeitschrift für medizinische Physik},
+  year    = {2025}
 }
 ```
 
